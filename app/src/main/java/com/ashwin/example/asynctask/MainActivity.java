@@ -1,24 +1,96 @@
 package com.ashwin.example.asynctask;
 
 import android.os.AsyncTask;
-import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
+import android.view.View;
+import android.widget.ProgressBar;
 import android.widget.TextView;
 
-import com.ashwin.example.asynctask.models.Employee;
-import com.ashwin.example.asynctask.models.Employees;
-import com.bluelinelabs.logansquare.LoganSquare;
+import androidx.appcompat.app.AppCompatActivity;
 
 import java.io.IOException;
+import java.lang.ref.WeakReference;
 
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
 
 public class MainActivity extends AppCompatActivity {
+    private static class MyAsyncTask extends AsyncTask<String, Integer, String> {
+        private WeakReference<MainActivity> activityWeakReference;
 
-    private TextView mContentTextView;
-    private Employees mEmployees;
+        MyAsyncTask(MainActivity activity) {
+            activityWeakReference = new WeakReference<>(activity);
+        }
+
+        @Override
+        protected void onPreExecute() {
+            super.onPreExecute();
+            MainActivity activity = activityWeakReference.get();
+            if (activity == null || activity.isFinishing()) {
+                return;
+            }
+            activity.progressBar.setVisibility(View.VISIBLE);
+            activity.progressBar.setProgress(0);
+            activity.contentTextView.setVisibility(View.GONE);
+        }
+
+        @Override
+        protected String doInBackground(String... params) {
+            String url = params[0];
+
+            OkHttpClient client = new OkHttpClient();
+            Request request = new Request.Builder()
+                    .url(url)
+                    .build();
+
+            try {
+                Response response = client.newCall(request).execute();
+
+                for (int i = 1; i <= 10; i++) {
+                    publishProgress(i * 10);
+                    Thread.sleep(1000);
+                }
+
+                if (response.isSuccessful()) {
+                    return response.body().string();
+                }
+            } catch (IOException | InterruptedException e) {
+                e.printStackTrace();
+            }
+
+            return null;
+        }
+
+        @Override
+        protected void onProgressUpdate(Integer... values) {
+            super.onProgressUpdate(values);
+            MainActivity activity = activityWeakReference.get();
+            if (activity == null || activity.isFinishing()) {
+                return;
+            }
+            activity.progressBar.setProgress(values[0]);
+        }
+
+        @Override
+        protected void onPostExecute(String content) {
+            super.onPostExecute(content);
+            MainActivity activity = activityWeakReference.get();
+            if (activity == null || activity.isFinishing()) {
+                return;
+            }
+            activity.progressBar.setVisibility(View.INVISIBLE);
+            activity.contentTextView.setVisibility(View.VISIBLE);
+            if (content != null) {
+                activity.contentTextView.setText(content);
+            } else {
+                activity.contentTextView.setText("Error");
+            }
+        }
+    }
+
+    private ProgressBar progressBar;
+    private TextView contentTextView;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -26,64 +98,15 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
 
         initViews();
-
-        startTask();
     }
 
     private void initViews() {
-        mContentTextView = (TextView) findViewById(R.id.content_text_view);
+        progressBar = findViewById(R.id.task_progressbar);
+        contentTextView = (TextView) findViewById(R.id.content_textview);
     }
 
-    private void startTask() {
-
-        new AsyncTask<Void, Void, Employees>() {
-
-            @Override
-            protected void onPreExecute() {
-                super.onPreExecute();
-
-                mContentTextView.setText("Loading...");
-            }
-
-            @Override
-            protected Employees doInBackground(Void... params) {
-                OkHttpClient client = new OkHttpClient();
-
-                Request request = new Request.Builder()
-                        .url(Constants.GIST_URL)
-                        .build();
-
-                try {
-                    Response response = client.newCall(request).execute();
-
-                    if (response.isSuccessful()) {
-                        mEmployees = (Employees) LoganSquare.parse(response.body().string(), Employees.class);
-                        return mEmployees;
-                    }
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-
-                return null;
-            }
-
-            @Override
-            protected void onPostExecute(Employees employees) {
-                super.onPostExecute(employees);
-
-                if (employees != null) {
-                    StringBuilder sb = new StringBuilder();
-
-                    for (Employee e : employees.getEmployees()) {
-                        sb.append(e.getName() + "\n\n");
-                    }
-
-                    mContentTextView.setText(sb.toString());
-                } else {
-                    mContentTextView.setText("Error");
-                }
-            }
-        }.execute();
-
+    public void startTask(View view) {
+        MyAsyncTask task = new MyAsyncTask(this);
+        task.execute(Constants.GIST_URL);
     }
 }
